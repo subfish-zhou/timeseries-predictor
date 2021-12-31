@@ -1,4 +1,3 @@
-# 导入包
 import pandas as pd
 import numpy as np
 
@@ -97,9 +96,10 @@ optimizer1 = optim.Adam(net.parameters(), lr=0.003)
 optimizer2 = optim.Adam(net.parameters(), lr=0.0003)
 
 iteration = 0
-
+loss_less=10#保存最小loss值
 def train_unit(optimizer):
     global iteration
+    global loss_less
     for _, (datapoints, labels) in enumerate(dataloader_train):
         optimizer.zero_grad()
 
@@ -112,12 +112,16 @@ def train_unit(optimizer):
         if iteration % 20 == 0:
             preds_test = net(X_test)[:, 0].unsqueeze(1)
             loss_test = criterion(preds_test, y_test)
+
+            #保存最小loss的模型参数
+            if loss_test<loss_less:
+                torch.save(net.state_dict(),'../data/models/model_best.pt')
             print("Iteration: {} Val-loss: {:.4f}".format(str(iteration), loss_test))
 
 
-for epoch in range(1500):
+for epoch in range(20):
     train_unit(optimizer1)
-for epoch in range(1500):
+for epoch in range(20):
     train_unit(optimizer2)
 
 original = df['consume'][1:][windows_size:]
@@ -192,6 +196,10 @@ def get_confidence_intervals(preds_test, ci_multiplier):
 # X_test=X_test.to('cpu')
 # net.to('cpu')
 
+#加载最优模型
+
+net=NN().to(device)
+net.load_state_dict(torch.load('../data/models/model_best.pt'))
 
 future_length = 1
 sample_nbr = 4

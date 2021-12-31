@@ -1,4 +1,3 @@
-# 导入包
 import pandas as pd
 import numpy as np
 
@@ -8,7 +7,9 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 from blitz.modules import BayesianLSTM
+from blitz.modules import BayesianLinear
 from blitz.utils import variational_estimator
+#from blitz.losses import kl_divergence_from_nn
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -61,8 +62,11 @@ def create_timestamps_ds(series, timestep_size=windows_size):
 class NN(nn.Module):
     def __init__(self):
         super(NN, self).__init__()
-        self.lstm_1 = BayesianLSTM(1, 20)
-        self.linear = nn.Linear(20, 1)
+        self.lstm_1 = BayesianLSTM(1, 50)
+
+        self.linear = nn.Linear(50, 1)
+        #self.linear = BayesianLinear(20, 1)
+        
 
     def forward(self, x):
         x_, _ = self.lstm_1(x)
@@ -87,7 +91,7 @@ y_train = y_train.clone().detach().requires_grad_(True).to(device)
 y_test = y_test.clone().detach().requires_grad_(True).to(device)
 
 ds = torch.utils.data.TensorDataset(X_train, y_train)
-dataloader_train = torch.utils.data.DataLoader(ds, batch_size=66, shuffle=True)
+dataloader_train = torch.utils.data.DataLoader(ds, batch_size=72, shuffle=True)
 
 net = NN().to(device)
 
@@ -97,9 +101,10 @@ optimizer1 = optim.Adam(net.parameters(), lr=0.003)
 optimizer2 = optim.Adam(net.parameters(), lr=0.0003)
 
 iteration = 0
-
+loss_less=10#保存最小loss值
 def train_unit(optimizer):
     global iteration
+    global loss_less
     for _, (datapoints, labels) in enumerate(dataloader_train):
         optimizer.zero_grad()
 
@@ -112,12 +117,18 @@ def train_unit(optimizer):
         if iteration % 20 == 0:
             preds_test = net(X_test)[:, 0].unsqueeze(1)
             loss_test = criterion(preds_test, y_test)
-            print("Iteration: {} Val-loss: {:.4f}".format(str(iteration), loss_test))
+
+            #保存最小loss的模型参数
+            if loss_test<loss_less:
+                loss_less = loss_test
+                torch.save(net.state_dict(),'../data/models/model_best.pt')
+                print("loss less is {:.4f}".format(loss_less))
+            print("Iteration: {} Val-loss: {:.4f}, loss least is {:.4f}".format(str(iteration), loss_test, loss_less))
 
 
-for epoch in range(1500):
+for epoch in range(2000):
     train_unit(optimizer1)
-for epoch in range(1500):
+for epoch in range(2000):
     train_unit(optimizer2)
 
 original = df['consume'][1:][windows_size:]
@@ -192,10 +203,14 @@ def get_confidence_intervals(preds_test, ci_multiplier):
 # X_test=X_test.to('cpu')
 # net.to('cpu')
 
+#加载最优模型
+
+net=NN().to(device)
+net.load_state_dict(torch.load('../data/models/model_best.pt'))
 
 future_length = 1
 sample_nbr = 4
-ci_multiplier = 10
+ci_multiplier = 1
 idx_pred, preds_test = pre_consume_future(X_test, future_length, sample_nbr)
 pred_mean_unscaled, upper_bound_unscaled, lower_bound_unscaled = get_confidence_intervals(preds_test,
                                                                                           ci_multiplier)
